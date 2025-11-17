@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 // Fix: Removed `LiveSession` as it is not an exported member of '@google/genai'.
 import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage } from '@google/genai';
@@ -6,6 +7,19 @@ import { Message, ChatRole, GroundingSource } from './types';
 import ChatMessage from './components/ChatMessage';
 import { SendIcon, MicIcon, StopIcon } from './components/icons';
 import { encode, decode, decodeAudioData } from './utils/audio';
+
+// Add type declarations for the aistudio object on the window
+declare global {
+    // Fix: Defined a named interface `AIStudio` to avoid declaration conflicts.
+    interface AIStudio {
+        hasSelectedApiKey: () => Promise<boolean>;
+        openSelectKey: () => Promise<void>;
+    }
+    interface Window {
+        aistudio?: AIStudio;
+    }
+}
+
 
 // Helper to check for grounding keywords
 const hasGroundingKeywords = (text: string, keywords: string[]): boolean => {
@@ -23,6 +37,7 @@ const App: React.FC = () => {
     const [input, setInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isApiKeyReady, setIsApiKeyReady] = useState(false);
     
     const chatRef = useRef<Chat | null>(null);
     // Fix: Using `any` for the session promise as `LiveSession` type is not exported.
@@ -33,11 +48,29 @@ const App: React.FC = () => {
 
     const chatContainerRef = useRef<HTMLDivElement>(null);
 
+     useEffect(() => {
+        // Check for API key when the component mounts
+        const checkApiKey = async () => {
+            if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+                setIsApiKeyReady(true);
+            }
+        };
+        checkApiKey();
+    }, []);
+
     useEffect(() => {
         if (chatContainerRef.current) {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
     }, [messages]);
+    
+    const handleSelectApiKey = async () => {
+        if (window.aistudio) {
+            await window.aistudio.openSelectKey();
+            // Optimistically assume the user selected a key and update the state
+            setIsApiKeyReady(true);
+        }
+    };
     
     // Initialize text chat
     const initializeChat = useCallback(() => {
@@ -46,6 +79,32 @@ const App: React.FC = () => {
             chatRef.current = ai.chats.create({ model: 'gemini-2.5-flash' });
         }
     }, []);
+
+    const handleApiError = (error: unknown, aiMessageId?: string) => {
+        console.error("API Error:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        
+        if (errorMessage.includes("API Key") || errorMessage.includes("Requested entity was not found")) {
+            setIsApiKeyReady(false); // Reset state to show the key selection screen
+             const systemMessage: Message = {
+                id: Date.now().toString(),
+                role: ChatRole.SYSTEM,
+                text: "Your API key is invalid or missing. Please select a valid key to continue."
+            };
+            if(aiMessageId){
+                 setMessages(prev => prev.filter(msg => msg.id !== aiMessageId).concat(systemMessage));
+            } else {
+                 setMessages(prev => [...prev, systemMessage]);
+            }
+        } else {
+            const displayError = `Sorry, I ran into an error: ${errorMessage}`;
+            if(aiMessageId){
+                setMessages(prev => prev.map(msg => msg.id === aiMessageId ? { ...msg, text: displayError, isLoading: false } : msg));
+            } else {
+                setMessages(prev => [...prev, { id: Date.now().toString(), role: ChatRole.SYSTEM, text: displayError }]);
+            }
+        }
+    };
 
     const sendMessage = async (messageText: string) => {
         if (!messageText.trim() || isLoading) return;
@@ -114,9 +173,7 @@ const App: React.FC = () => {
 
             setMessages(prev => prev.map(msg => msg.id === aiMessageId ? { ...msg, text: responseText, sources: sources, isLoading: false } : msg));
         } catch (error) {
-            console.error("Error sending message:", error);
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            setMessages(prev => prev.map(msg => msg.id === aiMessageId ? { ...msg, text: `Sorry, I ran into an error: ${errorMessage}`, isLoading: false } : msg));
+            handleApiError(error, aiMessageId);
         } finally {
             setIsLoading(false);
         }
@@ -237,8 +294,7 @@ const App: React.FC = () => {
                     },
                     // Fix: The onerror callback expects an ErrorEvent, not an Error.
                     onerror: (e: ErrorEvent) => {
-                        console.error('Live session error:', e);
-                        setMessages(prev => [...prev, {id: Date.now().toString(), role: ChatRole.SYSTEM, text: `Connection error: ${e.message}`}])
+                        handleApiError(new Error(e.message));
                         stopListening();
                     },
                     onclose: () => {
@@ -259,6 +315,30 @@ const App: React.FC = () => {
         }
     };
 
+
+    if (!isApiKeyReady) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white font-sans">
+                <div className="text-center p-6 bg-gray-800 rounded-xl shadow-2xl">
+                    <h1 className="text-3xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500">
+                       Welcome to LAXMI BRO
+                    </h1>
+                    <p className="mb-6 text-gray-400 max-w-sm">
+                        To get started, please select a Gemini API key. This is required to power the AI features of the assistant.
+                    </p>
+                    <button
+                        onClick={handleSelectApiKey}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105"
+                    >
+                        Select API Key
+                    </button>
+                     <p className="text-xs text-gray-500 mt-4">
+                        Ensure your key is configured for the Gemini API. For details on billing, visit <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-400">ai.google.dev</a>.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
