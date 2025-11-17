@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Chat, LiveSession, Modality, Blob, LiveServerMessage } from '@google/genai';
+// Fix: Removed `LiveSession` as it is not an exported member of '@google/genai'.
+import { GoogleGenAI, Chat, Modality, Blob, LiveServerMessage } from '@google/genai';
 import { Message, ChatRole, GroundingSource } from './types';
 import ChatMessage from './components/ChatMessage';
 import { SendIcon, MicIcon, StopIcon } from './components/icons';
@@ -24,7 +25,8 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     
     const chatRef = useRef<Chat | null>(null);
-    const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+    // Fix: Using `any` for the session promise as `LiveSession` type is not exported.
+    const sessionPromiseRef = useRef<Promise<any> | null>(null);
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
@@ -82,7 +84,8 @@ const App: React.FC = () => {
                     ?.map((chunk: any) => ({
                         title: chunk.maps?.title || 'Map Result',
                         uri: chunk.maps?.uri,
-                        type: 'maps'
+                        // Fix: Using `as const` to ensure the type is inferred as 'maps' literal, not string.
+                        type: 'maps' as const
                     })).filter((s: any) => s.uri) || [];
 
             } else if (hasGroundingKeywords(messageText, SEARCH_KEYWORDS)) {
@@ -97,7 +100,8 @@ const App: React.FC = () => {
                     ?.map((chunk: any) => ({
                         title: chunk.web?.title || 'Web Search Result',
                         uri: chunk.web?.uri,
-                        type: 'search'
+                        // Fix: Using `as const` to ensure the type is inferred as 'search' literal, not string.
+                        type: 'search' as const
                     })).filter((s: any) => s.uri) || [];
             } else {
                 // Standard Chat
@@ -231,7 +235,8 @@ const App: React.FC = () => {
                             nextStartTime = nextStartTime + audioBuffer.duration;
                         }
                     },
-                    onerror: (e: Error) => {
+                    // Fix: The onerror callback expects an ErrorEvent, not an Error.
+                    onerror: (e: ErrorEvent) => {
                         console.error('Live session error:', e);
                         setMessages(prev => [...prev, {id: Date.now().toString(), role: ChatRole.SYSTEM, text: `Connection error: ${e.message}`}])
                         stopListening();
@@ -259,7 +264,7 @@ const App: React.FC = () => {
         <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
             <header className="p-4 border-b border-gray-700 shadow-md">
                 <h1 className="text-xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500">
-                    Gemini Multi-Modal Assistant
+                    LAXMI BRO
                 </h1>
             </header>
             <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6">
